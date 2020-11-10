@@ -22,7 +22,7 @@ contract MCGInterface{
     
     function produceVaccine( uint _vaccineId, uint _amount) external returns(bool success);
     
-    function getVaccineInventory(uint vaccineId) external returns( 
+    function getVaccineInventory(uint _vaccineId) external view returns( 
     uint currentInventory,
     uint totalBatchesProduced);
 
@@ -36,7 +36,7 @@ contract MCGInterface{
         uint orderId,
         uint orderQuantity,
         bool isOrderAccepted,
-        address order
+        uint ordererId
     );
     function acceptOrder (uint _orderId) external;  
 
@@ -101,7 +101,7 @@ contract MCGInterface{
     
     function TransportContainerFromAirport(uint _orderId, uint _carrierId) external;
     
-    function approveDelivery(uint _orderId) external returns (bool success);
+    function approveDelivery(uint _orderId) external ;
     
-    function makePayment( uint _invoiceId) external payable returns (bool success);
+    function makePayment( uint _invoiceId) external payable ;
 }

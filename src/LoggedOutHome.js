@@ -1,9 +1,7 @@
 import React, { Component } from 'react'
 import { Button } from 'semantic-ui-react'
 import Web3 from 'web3'
-// import './css/login.css'
-// import Tulip from './TulipGarden/Tulip';
-// import './css/background.css'
+
 
 export class LoggedOutHome extends Component {
 
@@ -19,8 +17,10 @@ export class LoggedOutHome extends Component {
         var accounts = await web3.eth.getAccounts();
         console.log(accounts[0]);
         // Connect to the deployed smart contract
-        var smartContract = await new web3.eth.Contract(this.props.contractAbi, this.props.contractAddress)
-        this.props.logIn(smartContract, accounts[0]);
+        var smartContract = await new web3.eth.Contract(this.props.contractAbi, this.props.contractAddress);
+        var adminAddress = await smartContract.methods.adminAddress.call();
+        console.log(adminAddress);
+        this.props.logIn(smartContract, accounts[0], adminAddress);
     }
 
     render() {

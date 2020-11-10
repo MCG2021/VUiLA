@@ -20,7 +20,8 @@ class App extends Component {
           loggedIn: false,
           userAccount: '',
           appModalOpen: false,
-          mcg: null
+          mcg: null,
+          adminAddress:''
       };
   }
 
@@ -39,17 +40,16 @@ class App extends Component {
           gateway={this.state.gateway}
           contractAddress={this.state.contractAddress}
           contractAbi={this.state.contractAbi}
-          logIn={(smartContract, account) => this.setState({
+          logIn={(smartContract, account, adminAddress) => this.setState({
               loggedIn: true,
               userAccount: account,
               mcg: smartContract,
-              appModalOpen: true
+              appModalOpen: true,
+              adminAccount: adminAddress
           })}
-          // setContract={smartContract => this.setState({
-          //     worldOfTulips: smartContract
-          // })}
-      />
-      : <div >
+        />
+    
+        : <div >
           <LoggedInHome
               {...this.state}
               logOut={() => this.setState({

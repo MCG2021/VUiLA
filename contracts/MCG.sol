@@ -2,7 +2,7 @@ pragma solidity ^0.5.0;
 import "./SafeMath.sol";
 import "./MCGInterface.sol";
 
-contract MCG{
+contract MCG is MCGInterface{
     using SafeMath for uint256;
     
     address public contractAddress;
@@ -186,7 +186,7 @@ contract MCG{
     }
 
     
-    function registerCompany( string memory _companyName,  uint _identificationNumber, string memory _location, string memory _scRole) private {
+    function registerCompany( string memory _companyName,  uint _identificationNumber, string memory _location, string memory _scRole) public {
         // all the requires that use scRole will be replace by companies private address in future
         require(bytes(_companyName).length >0 && (bytes(_location).length >0), " fields cannot be empty");
         require (ownedCompanies [msg.sender] <1, "Check inputs/address cannot have more than one Company!");
@@ -202,7 +202,7 @@ contract MCG{
         emit companyRegistered(companyId, msg.sender);
     }
     
-    function getYourCompany() private view returns(
+    function getYourCompany() public view returns(
         uint companyId,
         address payable owner,
         string memory companyName,
@@ -223,7 +223,7 @@ contract MCG{
             );
     }
     
-    function registerAirport( string memory _airportName, string memory _airportLocation, address _airportOwner) onlyAdmin private  returns(bool success){
+    function registerAirport( string memory _airportName, string memory _airportLocation, address _airportOwner) onlyAdmin public  returns(bool success){
         require(bytes(_airportName).length>0 && bytes(_airportLocation).length>0, "Fields Cannot be empty");
         
         Airport memory airport;
@@ -233,12 +233,12 @@ contract MCG{
         return true;
     }
     
-    function approveCompany (uint _companyId) private onlyAdmin returns(bool success){
+    function approveCompany (uint _companyId) public onlyAdmin returns(bool success){
         companies[_companyId].isApprovedByAdmin = true;
         return true;
     }
     
-    function registerVaccine( string memory _vaccineName, uint _vaccinePrice, uint _threshLowestTemp, uint _threshHighestTemp, uint _thresHumidity, uint _HSTarriffNumber) private onlyApproved {
+    function registerVaccine( string memory _vaccineName, uint _vaccinePrice, uint _threshLowestTemp, uint _threshHighestTemp, uint _thresHumidity, uint _HSTarriffNumber) public onlyApproved {
         
         Vaccine memory vaccine;
         vaccineId = vaccineId.add(1);
@@ -247,7 +247,7 @@ contract MCG{
         emit VaccineRegistered(vaccineId, msg.sender);
     }
     
-    function produceVaccine( uint _vaccineId, uint _amount) onlyVaccineProducer(_vaccineId) private returns(bool success) {
+    function produceVaccine( uint _vaccineId, uint _amount) onlyVaccineProducer(_vaccineId) public returns(bool success) {
         require(_amount >0);
         vaccineToTotalBatches[_vaccineId] = vaccineToTotalBatches[_vaccineId].add(1);
         Batch memory batch;
@@ -260,7 +260,7 @@ contract MCG{
         return true;
     }
     
-    function getVaccineInventory(uint _vaccineId) private view onlyVaccineProducer(_vaccineId) returns( 
+    function getVaccineInventory(uint _vaccineId) public view onlyVaccineProducer(_vaccineId) returns( 
         uint currentInventory,
         uint totalBatchesProduced){
             return(
@@ -270,14 +270,14 @@ contract MCG{
         }
     
 
-    function getBatchDetail( uint _orderId) private view returns(
+    function getBatchDetail( uint _orderId) public view returns(
         uint[] memory batchId
     ){
         return(orderToBatches[_orderId]);
     }
 
     
-    function makePurchaseOrder( uint _vaccineId, uint _numberOfContainers) onlyApproved private {
+    function makePurchaseOrder( uint _vaccineId, uint _numberOfContainers) onlyApproved public {
         // assuming minOrderSize == containerCapacity or 1 container
         // uint minOrderSize = containerCapacity;
         // truck cannot carry more than two containers
@@ -289,7 +289,7 @@ contract MCG{
         emit OrderPlaced(orderId);
     }
     
-    function getPurchaseOrder( uint _orderId) private view returns(
+    function getPurchaseOrder( uint _orderId) public view returns(
         uint vaccineId,
         uint orderId,
         uint orderQuantity,
@@ -309,7 +309,7 @@ contract MCG{
                      );
     }
     
-    function acceptOrder (uint _orderId) onlyVaccineProducer(purchaseOrders[_orderId].vaccineId) private  {
+    function acceptOrder (uint _orderId) onlyVaccineProducer(purchaseOrders[_orderId].vaccineId) public  {
         require(purchaseOrders[_orderId].isOrderAccepted == false, "Order Already Accepted");
         // remove the below require in future to allow backlog orders
         uint _vaccineId = purchaseOrders[_orderId].vaccineId;
@@ -358,7 +358,7 @@ contract MCG{
         }
     } 
     
-    function getInvoice( uint _orderId) private view returns(
+    function getInvoice( uint _orderId) public view returns(
         uint invoiceId,
         uint orderId,
         uint orderValue,
@@ -426,7 +426,7 @@ contract MCG{
         containers[containerId] = container;
     }
     
-    function initiateShipment (uint _orderId, uint _carrierId, uint _exportAirportId, uint _destinationAirportId) private onlyVaccineProducer(purchaseOrders[_orderId].vaccineId)  {
+    function initiateShipment (uint _orderId, uint _carrierId, uint _exportAirportId, uint _destinationAirportId) public onlyVaccineProducer(purchaseOrders[_orderId].vaccineId)  {
         require(companies[_carrierId].isApprovedByAdmin ==true && (msg.sender == companies[vaccines[purchaseOrders[_orderId].vaccineId].manufacturerId].owner));
         
         makeCertificateOfOrigin(_orderId);
@@ -457,7 +457,7 @@ contract MCG{
     }
     
 
-    function getContainer( uint _containerId)private view returns (
+    function getContainer( uint _containerId)public view returns (
         uint containerId,
         uint orderId,
         uint packingListId
@@ -482,7 +482,7 @@ contract MCG{
             );
     }
     
-    function getCertificateOfOrigin( uint _certificateOfOriginId) private view returns (
+    function getCertificateOfOrigin( uint _certificateOfOriginId) public view returns (
         uint orderId,
         uint certificateOfOriginId,
         uint HSTarriffNumber,
@@ -510,7 +510,7 @@ contract MCG{
             );
     }
     
-    function getExportLorryReciept( uint _orderId) private view returns(
+    function getExportLorryReciept( uint _orderId) public view returns(
         uint orderId,
         uint lorryRecieptId,
         uint carrierId,
@@ -536,7 +536,7 @@ contract MCG{
         }
     
         
-    function getImportLorryReciept( uint _orderId) private view returns(
+    function getImportLorryReciept( uint _orderId) public view returns(
         uint orderId,
         uint lorryRecieptId,
         uint carrierId,
@@ -562,7 +562,7 @@ contract MCG{
         }
     
     
-    function getAirwayBill( uint _airwayBillId) private view returns(
+    function getAirwayBill( uint _airwayBillId) public view returns(
         uint invoiceId,
         uint airwayBillId,
         uint aircarrierId, // assumed that air carrier and truck carrier are same
@@ -593,7 +593,7 @@ contract MCG{
             );    
         }    
     
-    function RequestPickUp(uint _orderId) private returns(bool success){
+    function RequestPickUp(uint _orderId) public returns(bool success){
         // only approved Carrier
         // uint _lorryReceiptId = getLorryReceiptFromOrder(_orderId);
         if(airwayBills[getairwayBillFromOrder(_orderId)].isApprovedByImportCustoms == true){
@@ -657,7 +657,7 @@ contract MCG{
     // }
     
     
-    function approveExport(uint _containerId) private returns(bool success) {
+    function approveExport(uint _containerId) public returns(bool success) {
         require( msg. sender == airports[airwayBills[packingLists[containers[_containerId].packingListId].airwayBillId].exportAirportId].airportOwnerAddress);
         // require the temp and Humidity to be correct
         // which flight it is on
@@ -670,7 +670,7 @@ contract MCG{
         return true;
     }
     
-    function approveImport(uint _containerId, uint _warehouseId) private returns(bool success){
+    function approveImport(uint _containerId, uint _warehouseId) public returns(bool success){
         require( msg.sender == airports[airwayBills[packingLists[containers[_containerId].packingListId].airwayBillId].importAirportId].airportOwnerAddress);
         
         certificateOfOrigins[packingLists[containers[_containerId].packingListId].certificateOfOriginId].isApprovedByImportCustoms = true;
@@ -681,13 +681,13 @@ contract MCG{
         return true;
     }
     
-    function TransportContainerFromAirport(uint _orderId, uint _carrierId) private{
+    function TransportContainerFromAirport(uint _orderId, uint _carrierId) public {
         require(msg.sender == companies[purchaseOrders[_orderId].ordererId].owner , " You are not authorized to pick up this order."); // Distributor
         uint _airwayBillId = getairwayBillFromOrder(_orderId);
         makeLorryReciept( _orderId, _carrierId, airports[airwayBills[_airwayBillId].importAirportId].airportLocation, companies[ownedCompanyId[msg.sender]].location,false );
     }
     
-    function approveDelivery(uint _orderId) private {
+    function approveDelivery(uint _orderId) public {
         require(msg.sender == companies[purchaseOrders[_orderId].ordererId].owner, " You are not authorized to pick up this order.");
         invoices[getInvoiceId(_orderId)].isInvoiceApprovedForPayment = true;
         orderToLorryReciepts[_orderId][false].isDeliveryDone = true;
