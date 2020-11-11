@@ -97,7 +97,7 @@ class OnboardingCompany extends Component{
                             options = {options} 
                             placeholder='Manufacturer'
                         />
-                    </Form.Group>
+                    </Form.Group>s
                     <Form.Button name = "submitButton" type = "submit" >Register Company</Form.Button>
                     {this.state.error}
                     <p>Company Name is {this.state.companyName} and ID is {this.state.identificationNumber} with location {this.state.location} and role{this.state.scRole} </p>                
