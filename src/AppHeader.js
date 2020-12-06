@@ -16,7 +16,7 @@ class AppHeader extends Component {
              <p> 
                  User Account: {this.props.userAccount}
                <br />
-                Admin Account : {this.props.adminAddress}
+                Admin Account : {this.props.adminAccount}
             </p>
         }
         else {

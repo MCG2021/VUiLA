@@ -3,6 +3,8 @@ pragma solidity ^0.5.0;
 contract MCGInterface{
     
     function registerCompany( string calldata _companyName,  uint _identificationNumber, string calldata _location, string calldata _scRole) external;
+
+    function registerHospital(string calldata _hospitalName, string calldata _hospitalLocation) external returns( uint hospitalId);
     
     function getYourCompany() external view returns(
         uint companyId,
@@ -18,13 +20,14 @@ contract MCGInterface{
     
     function approveCompany (uint _companyId) external  returns(bool success);
     
+    function approveHospital (uint _hospitalId) external returns (bool success);
+    
     function registerVaccine( string calldata _vaccineName, uint _vaccinePrice, uint _threshLowestTemp, uint _threshHighestTemp, uint _thresHumidity, uint _HSTarriffNumber) external;
     
     function produceVaccine( uint _vaccineId, uint _amount) external returns(bool success);
     
     function getVaccineInventory(uint _vaccineId) external view returns( 
-    uint currentInventory,
-    uint totalBatchesProduced);
+    uint currentInventory);
 
     function getBatchDetail( uint _orderId) external view returns(
     uint[] memory batchId);
@@ -32,6 +35,7 @@ contract MCGInterface{
     function makePurchaseOrder( uint _vaccineId, uint _numberOfContainers)  external;
 
     function getPurchaseOrder( uint _orderId) external view returns(
+        uint sellerId,
         uint vaccineId,
         uint orderId,
         uint orderQuantity,
@@ -93,6 +97,11 @@ contract MCGInterface{
         bool isApprovedByExportCustoms,
         bool isApprovedByImportCustoms
         );
+    
+    function onboardSensor( uint _containerId, address _iotAddress)  external returns (uint iotId, uint containerId);
+    
+    function checkTemperatureAndHumdity( uint _iotId, uint _temperature, uint _humidity) external returns (bool everythingCorrect); 
+    
     function RequestPickUp(uint _orderId) external returns(bool success);
     
     function approveExport(uint _containerId) external returns(bool success); 
@@ -104,4 +113,8 @@ contract MCGInterface{
     function approveDelivery(uint _orderId) external ;
     
     function makePayment( uint _invoiceId) external payable ;
+    
+    function buyVaccine( uint _numberOfContainers, uint _distributorId, uint _vaccineId) external returns (uint purchaseOrderId); //for hospitals
+
+    function acceptDistributionOrderAndShip( uint _orderId, uint _carrierId) external returns (uint invoiceId);
 }

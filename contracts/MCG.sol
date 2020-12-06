@@ -40,6 +40,7 @@ contract MCG is MCGInterface{
     }
     
     struct PurchaseOrder{
+        uint sellerId;
         uint vaccineId;
         uint orderId;
         uint orderQuantity;
@@ -93,6 +94,7 @@ contract MCG is MCGInterface{
         uint containerId;
         uint orderId;
         uint packingListId;
+        bool isSafeForDelivery;
         // bool isTemperatureCorrect;
         // bool isHumidityCorrect;
     }
@@ -114,6 +116,19 @@ contract MCG is MCGInterface{
         bool isDeliveryDone;
     }
     
+    struct Hospital{
+        uint hospitalId;
+        string  hospitalName;
+        string hospitaLocation;
+        address payable hospitalAddress;
+        bool isApprovedByAdmin;
+    }
+    
+    struct IoT{
+        uint ioTId;
+        address ioTAddress;
+    }
+    
     mapping (address => uint) private ownedCompanies;
     mapping (address => uint) private ownedCompanyId;
     mapping (uint => Company) public companies;
@@ -121,7 +136,7 @@ contract MCG is MCGInterface{
     mapping (uint => Vaccine) public vaccines;
     mapping (uint => uint) private vaccineToTotalBatches;
     mapping (uint => mapping( uint => Batch)) private vaccineToBatch;
-    mapping (uint => uint) private vaccineCurrentInventory;
+    mapping (uint => mapping(address => uint)) private vaccineCurrentInventory;
     mapping (uint => PurchaseOrder) private purchaseOrders;
     mapping (uint => uint[]) private orderToBatches;
     mapping (uint => Invoice) private invoices;
@@ -133,10 +148,15 @@ contract MCG is MCGInterface{
     mapping (uint => PackingList) private packingLists;
     mapping (uint => uint) private containerToIot;
     mapping (uint => uint) private containerToWarehouse;
-    
+    mapping (uint=> Hospital) public hospitals;
+    mapping (address => uint) public ownedHospitalId;
+    mapping (uint => uint) public iotToContainer;
+    mapping (uint => IoT) public ioTs;
     
     uint private companyId = 0;
     uint private vaccineId = 0;
+    uint private hospitaId = 0;
+    uint private ioTId = 0;
     uint private containerCapacity = 100;
     uint private orderId = 0;
     uint private invoiceId = 0;
@@ -238,6 +258,11 @@ contract MCG is MCGInterface{
         return true;
     }
     
+    function approveHospital (uint _hospitalId) public onlyAdmin returns (bool success){
+        hospitals[_hospitalId].isApprovedByAdmin = true;
+        return true;
+    }
+    
     function registerVaccine( string memory _vaccineName, uint _vaccinePrice, uint _threshLowestTemp, uint _threshHighestTemp, uint _thresHumidity, uint _HSTarriffNumber) public onlyApproved {
         
         Vaccine memory vaccine;
@@ -256,16 +281,14 @@ contract MCG is MCGInterface{
         
         batch = Batch(_batchId, _amount);
         vaccineToBatch[_vaccineId][_batchId] = batch; 
-        vaccineCurrentInventory[_vaccineId] = vaccineCurrentInventory[_vaccineId].add(_amount);
+        vaccineCurrentInventory[_vaccineId][msg.sender] = vaccineCurrentInventory[_vaccineId][msg.sender].add(_amount);
         return true;
     }
     
-    function getVaccineInventory(uint _vaccineId) public view onlyVaccineProducer(_vaccineId) returns( 
-        uint currentInventory,
-        uint totalBatchesProduced){
+    function getVaccineInventory(uint _vaccineId) public view returns( 
+        uint currentInventory){
             return(
-                vaccineCurrentInventory[_vaccineId],
-                vaccineToTotalBatches[_vaccineId]
+                vaccineCurrentInventory[_vaccineId][msg.sender]
             );
         }
     
@@ -281,26 +304,40 @@ contract MCG is MCGInterface{
         // assuming minOrderSize == containerCapacity or 1 container
         // uint minOrderSize = containerCapacity;
         // truck cannot carry more than two containers
-        require(_numberOfContainers >= 1 && _numberOfContainers <=2, " Order can only be made in multiple of container capacity"); 
+        require(_numberOfContainers >= 1 && _numberOfContainers <=2, " Order can only be made in multiple of container capacity");
+        require(ownedCompanyId[msg.sender] !=0);
         PurchaseOrder memory purchaseOrder;
         orderId = orderId.add(1);
-        purchaseOrder = PurchaseOrder(_vaccineId,orderId, _numberOfContainers, false, ownedCompanyId[msg.sender]);
+        purchaseOrder = PurchaseOrder(vaccines[_vaccineId].manufacturerId,_vaccineId,orderId, _numberOfContainers, false, ownedCompanyId[msg.sender]);
         purchaseOrders[orderId] = purchaseOrder;
         emit OrderPlaced(orderId);
     }
     
     function getPurchaseOrder( uint _orderId) public view returns(
+        uint sellerId,
         uint vaccineId,
         uint orderId,
         uint orderQuantity,
         bool isOrderAccepted,
         uint ordererId
-    ){
-        require((msg.sender == companies[vaccines[purchaseOrders[_orderId].vaccineId].manufacturerId].owner)|| // manufacturer
-        (msg.sender == companies[purchaseOrders[_orderId].ordererId].owner ), " You are not authorized!"); // Distributor
+    ){  
+        address payable _orderer;
+
+        if(ownedHospitalId[msg.sender] ==  0){
+            _orderer = companies[purchaseOrders[_orderId].ordererId].owner;
+        }
+        else{
+            _orderer =  hospitals[purchaseOrders[_orderId].ordererId].hospitalAddress;
+            
+        }
+        
+        require((msg.sender == companies[purchaseOrders[_orderId].sellerId].owner)||          // seller
+        (msg.sender == _orderer)                    // Orderer,
+        , "You are not authorized!"); // Distributor
          PurchaseOrder memory purchaseOrder = purchaseOrders[_orderId];
          
          return(
+                purchaseOrder.sellerId,
                 purchaseOrder.vaccineId,
                 purchaseOrder.orderId,
                 purchaseOrder.orderQuantity,
@@ -313,14 +350,14 @@ contract MCG is MCGInterface{
         require(purchaseOrders[_orderId].isOrderAccepted == false, "Order Already Accepted");
         // remove the below require in future to allow backlog orders
         uint _vaccineId = purchaseOrders[_orderId].vaccineId;
-        require(vaccineCurrentInventory[_vaccineId] >= purchaseOrders[_orderId].orderQuantity*100, "Inventory low!");
+        require(vaccineCurrentInventory[_vaccineId][msg.sender] >= purchaseOrders[_orderId].orderQuantity*100, "Inventory low!");
        
         purchaseOrders[_orderId].isOrderAccepted = true;
         makeInvoice( _orderId);
         
         uint _orderQuantityVaccine = purchaseOrders[_orderId].orderQuantity*100;
         // vaccine Inventory goes down --> one container has 100 vaccines
-        vaccineCurrentInventory[_vaccineId] = vaccineCurrentInventory[_vaccineId].sub(purchaseOrders[_orderId].orderQuantity*100);
+        vaccineCurrentInventory[_vaccineId][msg.sender] = vaccineCurrentInventory[_vaccineId][msg.sender].sub(purchaseOrders[_orderId].orderQuantity*100);
         
         for(uint i = 0; i<= vaccineToTotalBatches[_vaccineId]; i++){
             if(vaccineToBatch[_vaccineId][i].amount == 0){
@@ -343,7 +380,7 @@ contract MCG is MCGInterface{
     
     function makeInvoice ( uint _orderId) private {
         invoiceId = invoiceId.add(1);
-        uint _orderValue = (purchaseOrders[_orderId].orderQuantity).mul(vaccines[purchaseOrders[_orderId].vaccineId].vaccinePrice);
+        uint _orderValue = (purchaseOrders[_orderId].orderQuantity).mul(vaccines[purchaseOrders[_orderId].vaccineId].vaccinePrice)*100; // v=100 vaccines;
         Invoice memory invoice;
         invoice = Invoice(invoiceId,orderId, _orderValue, false, false, now);
         invoices[invoiceId] = invoice;
@@ -366,8 +403,17 @@ contract MCG is MCGInterface{
         bool isInvoicePayed,
         uint timeOfInvoiceGeneration
         ){
-         require((msg.sender == companies[vaccines[purchaseOrders[_orderId].vaccineId].manufacturerId].owner)||         // manufacturer
-         (msg.sender == companies[purchaseOrders[_orderId].ordererId].owner ) ||                      // Distributor
+         address payable _orderer;
+
+        if(ownedHospitalId[msg.sender] != 0){
+            _orderer =  hospitals[purchaseOrders[_orderId].ordererId].hospitalAddress;
+        }
+        else{
+            _orderer = companies[purchaseOrders[_orderId].ordererId].owner;
+        }
+        
+        require((msg.sender == companies[purchaseOrders[_orderId].sellerId].owner)||          // seller
+        (msg.sender == _orderer) ||                      // Distributor
         (msg.sender == airports[airwayBills[getairwayBillFromOrder(_orderId)].exportAirportId].airportOwnerAddress)||   // exportAirportCustoms
         (msg.sender == airports[airwayBills[getairwayBillFromOrder(_orderId)].importAirportId].airportOwnerAddress)
         , " You are not authorized!");
@@ -381,7 +427,6 @@ contract MCG is MCGInterface{
                 invoice.isInvoicePayed,
                 invoice.timeOfInvoiceGeneration
                     );
-        
         }
     
     function makeLorryReciept (uint _orderId, uint _truckCarrierId, string memory _pickupLocation, string memory _deliveryLocation, bool _isExporting) private {
@@ -422,7 +467,7 @@ contract MCG is MCGInterface{
     
     function assignContainer(uint _orderId, uint _packingListId) private {
         containerId = containerId.add(1);
-        Container memory container = Container(containerId, _orderId, _packingListId);
+        Container memory container = Container(containerId, _orderId, _packingListId,true);
         containers[containerId] = container;
     }
     
@@ -453,10 +498,8 @@ contract MCG is MCGInterface{
             emit ContainerAssigned(containerId);
     }
         emit ShipmentInitiated(certificateOfOriginId, airwayBillId);
-    
     }
     
-
     function getContainer( uint _containerId)public view returns (
         uint containerId,
         uint orderId,
@@ -465,15 +508,22 @@ contract MCG is MCGInterface{
     {
         Container memory container = containers[ _containerId];
         uint _orderId = container.orderId;
-        require((msg.sender == companies[vaccines[purchaseOrders[_orderId].vaccineId].manufacturerId].owner)||          // manufacturer
-        (msg.sender == companies[purchaseOrders[_orderId].ordererId].owner )||                                          // Distributor
+        address payable _orderer;
+
+        if(ownedHospitalId[msg.sender] != 0){
+            _orderer =  hospitals[purchaseOrders[_orderId].ordererId].hospitalAddress;
+        }
+        else{
+            _orderer = companies[purchaseOrders[_orderId].ordererId].owner;
+        }
+        
+        require((msg.sender == companies[purchaseOrders[_orderId].sellerId].owner)||          // seller
+        (msg.sender == _orderer)||                                          // Distributor
         (msg.sender == airports[airwayBills[getairwayBillFromOrder(_orderId)].exportAirportId].airportOwnerAddress)||   // exportAirportCustoms
         (msg.sender == airports[airwayBills[getairwayBillFromOrder(_orderId)].importAirportId].airportOwnerAddress)||   // importAirportCustoms
         (msg.sender == companies[orderToLorryReciepts[_orderId][true].carrierId].owner)||                               // ExportTrucker
         (msg.sender == companies[orderToLorryReciepts[_orderId][true].carrierId].owner)                                 // importTrucker
         , " You are not authorized!");
-
-        
     
         return(
             container.containerId,
@@ -519,7 +569,9 @@ contract MCG is MCGInterface{
         bool isPickedUp,
         bool isDeliveryDone
         ){
-            ((msg.sender == companies[vaccines[purchaseOrders[_orderId].vaccineId].manufacturerId].owner)||             // manufacturer
+            
+        require((msg.sender == companies[purchaseOrders[_orderId].sellerId].owner)||
+            (msg.sender == companies[vaccines[purchaseOrders[_orderId].vaccineId].manufacturerId].owner)||             // manufacturer
              (msg.sender == companies[orderToLorryReciepts[_orderId][true].carrierId].owner)                            // ExportTrucker
              , "You are not authorized!");
              
@@ -545,6 +597,7 @@ contract MCG is MCGInterface{
         bool isPickedUp,
         bool isDeliveryDone
         ){
+        
              require((msg.sender == companies[purchaseOrders[_orderId].ordererId].owner )||                                          // Distributor
              (msg.sender == companies[orderToLorryReciepts[_orderId][false].carrierId].owner)                            // ExportTrucker
              , "You are not authorized!");
@@ -575,8 +628,17 @@ contract MCG is MCGInterface{
         
         AirwayBill memory airwayBill = airwayBills[_airwayBillId];
         uint _orderId = invoices[airwayBill.invoiceId].orderId;
-        require((msg.sender == companies[vaccines[purchaseOrders[_orderId].vaccineId].manufacturerId].owner)||          // manufacturer
-        (msg.sender == companies[purchaseOrders[_orderId].ordererId].owner )||                                          // Distributor
+        address payable _orderer;
+
+        if(ownedHospitalId[msg.sender] != 0){
+            _orderer =  hospitals[purchaseOrders[_orderId].orderId].hospitalAddress;
+        }
+        else{
+            _orderer = companies[purchaseOrders[_orderId].orderId].owner;
+        }
+        
+        require((msg.sender == companies[purchaseOrders[_orderId].sellerId].owner)||          // seller
+        (msg.sender == _orderer)||                                          // Distributor
         (msg.sender == airports[airwayBills[getairwayBillFromOrder(_orderId)].exportAirportId].airportOwnerAddress)||   // exportAirportCustoms
         (msg.sender == airports[airwayBills[getairwayBillFromOrder(_orderId)].importAirportId].airportOwnerAddress)     // importAirportCustoms
         , " You are not authorized!");  
@@ -621,44 +683,39 @@ contract MCG is MCGInterface{
         }
     }
     
+    function onboardSensor( uint _containerId, address _iotAddress) onlyAdmin public returns (uint iotId, uint containerId){
+        ioTId = ioTId.add(1);
+        
+        IoT memory ioT = IoT(ioTId,_iotAddress);
+        ioTs[ioTId] = ioT;
+        
+        iotToContainer[ioTId] = _containerId;
+        
+        return( ioTId, _containerId);
+    }
 
-    // function mapContainerToIoT ( uint _containerId, uint _IoTId)  onlyAdmin private returns(bool success){
-    //     containerToIot[_containerId] = _IoTId; // assumes one IoT for One Coantiner
-    //     // will have to change in the future to get array of all the IoT devices in the container
-        
-    // }
     
-    // function getDataFromIoT (uint _containerId) internal returns (uint Temperature, uint Humidity){
-    //     uint _IotId = containerToIot[_containerId];
-    //     uint[] memory data = new uint[](2);
-    //     // use oracleAPI call here to get data
+    function checkTemperatureAndHumdity( uint _iotId, uint _temperature, uint _humidity) public  returns (bool everythingCorrect) {
         
-    //     return ( data[0], data[1] );
-    // }
-    
-    // function checkTemperatureAndHumdity( uint _containerId) private returns (bool everythingCorrect) {
+        require(ioTs[_iotId].ioTAddress == msg.sender, "wrong IoT address");
+        uint _containerId = iotToContainer[_iotId];
         
-    //     uint Temperature;
-    //     uint Humidity;
-        
-    //     (Temperature,) = getDataFromIoT(_containerId);
-    //     (,Humidity) = getDataFromIoT(_containerId);
-        
-    //     if ((Temperature < vaccines[purchaseOrders[containers[_containerId].orderId].vaccineId].threshLowestTemp) 
-    //     || (Temperature > vaccines[purchaseOrders[containers[_containerId].orderId].vaccineId].threshHighestTemp) 
-    //     || (Humidity > vaccines[purchaseOrders[containers[_containerId].orderId].vaccineId].threshHumidity)) {
+        if ((_temperature < vaccines[purchaseOrders[containers[_containerId].orderId].vaccineId].threshLowestTemp) 
+        || (_temperature > vaccines[purchaseOrders[containers[_containerId].orderId].vaccineId].threshHighestTemp) 
+        || (_humidity > vaccines[purchaseOrders[containers[_containerId].orderId].vaccineId].threshHumidity)) {
 
-    //     emit Alarm( _containerId, Temperature, Humidity);
-    //     return false;
-    //     }
-    //     else{
-    //         return true;
-    //     }
-    // }
-    
+        emit Alarm( _containerId, _temperature, _humidity);
+        containers[_containerId].isSafeForDelivery = false;
+        return false;
+        }
+        else{
+            return true;
+        }
+    }
     
     function approveExport(uint _containerId) public returns(bool success) {
         require( msg. sender == airports[airwayBills[packingLists[containers[_containerId].packingListId].airwayBillId].exportAirportId].airportOwnerAddress);
+        require(containers[_containerId].isSafeForDelivery == true, "check Temperature and Humity!! Alarm emitted!!"); 
         // require the temp and Humidity to be correct
         // which flight it is on
         
@@ -672,6 +729,7 @@ contract MCG is MCGInterface{
     
     function approveImport(uint _containerId, uint _warehouseId) public returns(bool success){
         require( msg.sender == airports[airwayBills[packingLists[containers[_containerId].packingListId].airwayBillId].importAirportId].airportOwnerAddress);
+        require(containers[_containerId].isSafeForDelivery == true, "check Temperature and Humity!! Alarm emitted!!");
         
         certificateOfOrigins[packingLists[containers[_containerId].packingListId].certificateOfOriginId].isApprovedByImportCustoms = true;
         airwayBills[packingLists[containers[_containerId].packingListId].airwayBillId].isApprovedByImportCustoms = true;
@@ -688,23 +746,43 @@ contract MCG is MCGInterface{
     }
     
     function approveDelivery(uint _orderId) public {
-        require(msg.sender == companies[purchaseOrders[_orderId].ordererId].owner, " You are not authorized to pick up this order.");
+ 
+        if(ownedCompanyId[msg.sender]>0){
+            require(msg.sender == companies[purchaseOrders[_orderId].ordererId].owner, " You are not authorized to approve this delivery.");
+            orderToLorryReciepts[_orderId][false].isDeliveryDone = true;
+        }
+        else{
+            require(msg.sender == hospitals[purchaseOrders[_orderId].ordererId].hospitalAddress,"You are not authorized to approve this delivery");
+        }
         invoices[getInvoiceId(_orderId)].isInvoiceApprovedForPayment = true;
-        orderToLorryReciepts[_orderId][false].isDeliveryDone = true;
-        
+        uint _vaccineId = purchaseOrders[_orderId].vaccineId;
+        vaccineCurrentInventory[_vaccineId][msg.sender] = vaccineCurrentInventory[_vaccineId][msg.sender].add(purchaseOrders[_orderId].orderQuantity*100); 
         for (uint i=0;i< purchaseOrders[_orderId].orderQuantity;i++){
             uint _containerId = orderToContainers[_orderId][i];
+            require(containers[_containerId].isSafeForDelivery == true, "check Temperature and Humity!! Alarm emitted!!");
             emit ContainerFree(_containerId);
         }
     }
     
     function makePayment( uint _invoiceId) public payable {
-        require(msg.sender == companies[purchaseOrders[invoices[_invoiceId].orderId].ordererId].owner, "You are trying to pay wrong invoice.");
+        
+        require(msg.sender == companies[purchaseOrders[invoices[_invoiceId].orderId].ordererId].owner || msg.sender == hospitals[purchaseOrders[invoices[_invoiceId].orderId].ordererId].hospitalAddress, "You are trying to pay wrong invoice.");
         require(invoices[_invoiceId].isInvoicePayed != true,"Invoice already payed!") ;       
+   
         invoices[_invoiceId].isInvoiceApprovedForPayment = true;
         invoices[_invoiceId].isInvoicePayed = true;
         address payable _payee = companies[vaccines[purchaseOrders[invoices[_invoiceId].orderId].vaccineId].manufacturerId].owner;
-        uint _paymentAmount = invoices[_invoiceId].orderValue;
+        
+        uint  _orderId = invoices[_invoiceId].orderId;
+        uint _numberDelivered = 0;
+        uint _orderQuantity = purchaseOrders[_orderId].orderQuantity;
+        for (uint i=0;i< _orderQuantity;i++){
+            uint _containerId = orderToContainers[_orderId][i];
+            if(containers[_containerId].isSafeForDelivery == true){
+               _numberDelivered = _numberDelivered.add(1);
+            }}
+        
+        uint _paymentAmount = (invoices[_invoiceId].orderValue * (_numberDelivered)/_orderQuantity);
         
         if(msg.value > _paymentAmount) {
             address(uint160(msg.sender)).transfer(msg.value - _paymentAmount);
@@ -713,4 +791,52 @@ contract MCG is MCGInterface{
         address(uint160(_payee)).transfer(_paymentAmount);
         emit PaymentDone(_invoiceId);
     }
+    
+    function registerHospital(string memory _hospitalName, string memory _hospitalLocation) public returns( uint hospitalId){
+        require(ownedHospitalId[msg.sender] == 0 && ownedCompanyId[msg.sender] == 0);
+        hospitalId = hospitalId.add(1);
+        Hospital memory hospital = Hospital(hospitalId, _hospitalName,_hospitalLocation, msg.sender,false);
+        hospitals[hospitalId] = hospital;
+        ownedHospitalId[msg.sender] = hospitalId;
+        return(hospitalId);
+    }
+    
+
+    function buyVaccine( uint _numberOfContainers, uint _distributorId, uint _vaccineId) public returns (uint purchaseOrderId){
+        require(hospitals[ownedHospitalId[msg.sender]].isApprovedByAdmin == true);
+        PurchaseOrder memory purchaseOrder;
+        orderId = orderId.add(1);
+        purchaseOrder = PurchaseOrder(_distributorId,_vaccineId,orderId, _numberOfContainers, false, ownedHospitalId[msg.sender]);
+        purchaseOrders[orderId] = purchaseOrder;
+    }
+
+    function acceptDistributionOrderAndShip( uint _orderId, uint _carrierId) public returns (uint invoiceId){
+        uint _vaccineId = purchaseOrders[_orderId].vaccineId;
+        require(msg.sender == companies[purchaseOrders[_orderId].sellerId].owner && vaccineCurrentInventory[_vaccineId][msg.sender] >= purchaseOrders[_orderId].orderQuantity*100
+        , "Either you are not authorized to accept order or your Inventory is low");
+        makeInvoice(_orderId);
+        makeLorryReciept(_orderId, _carrierId,companies[ownedCompanyId[msg.sender]].location ,hospitals[ownedHospitalId[msg.sender]].hospitaLocation, true);
+        vaccineCurrentInventory[_vaccineId][msg.sender] = vaccineCurrentInventory[_vaccineId][msg.sender].sub(purchaseOrders[_orderId].orderQuantity); 
+
+        uint _orderQuantity = purchaseOrders[_orderId].orderQuantity;
+        uint _invoiceId = getInvoiceId(_orderId);
+        
+        for (uint i = 0; i<= _orderQuantity; i++){
+            PackingList memory packingList;
+            uint _vaccineId = purchaseOrders[_orderId].vaccineId;
+            uint _certificateOfOriginId = 0;
+            uint _airwayBillId  = 0;
+            uint _numberOfPallets = 10;
+            packingListId = packingListId.add(1);
+            packingList = PackingList(packingListId, _invoiceId, _vaccineId, 100, _certificateOfOriginId, _airwayBillId, _numberOfPallets,false, false);
+            packingLists[packingListId] = packingList;
+            assignContainer(_orderId, packingListId);
+            orderToContainers[_orderId].push(containerId);            
+            
+            emit PackingListCreated(packingListId);
+            emit ContainerAssigned(containerId);
+                   // no airwaybill or certificateOfOrigin required and no need for approval from customs so values will be 0,0 and false;
+    }}
+    
+    // truck will request pickup after this.
 }

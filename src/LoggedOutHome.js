@@ -18,7 +18,7 @@ export class LoggedOutHome extends Component {
         console.log(accounts[0]);
         // Connect to the deployed smart contract
         var smartContract = await new web3.eth.Contract(this.props.contractAbi, this.props.contractAddress);
-        var adminAddress = await smartContract.methods.adminAddress.call();
+        var adminAddress = await smartContract.methods.adminAddress().call();
         console.log(adminAddress);
         this.props.logIn(smartContract, accounts[0], adminAddress);
     }
